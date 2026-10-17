@@ -78,9 +78,12 @@ public class ApplicationService {
     }
 
     @Transactional
-    public Application updateStatus(Long applicationId, UpdateStatusRequest request) {
+    public Application updateStatus(Long applicationId, UpdateStatusRequest request, Long currentUserId) {
         Application app = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Application not found"));
+        if (app.getUser() == null || !app.getUser().getId().equals(currentUserId)) {
+            throw new RuntimeException("Application does not belong to current user");
+        }
 
         ApplicationStatus currentStatus = app.getStatus();
         ApplicationStatus newStatus = request.getNewStatus();

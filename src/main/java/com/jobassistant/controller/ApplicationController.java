@@ -45,7 +45,8 @@ public class ApplicationController {
     public ResponseEntity<Application> updateStatus(
             @PathVariable Long appId,
             @RequestBody UpdateStatusRequest request) {
-        Application app = applicationService.updateStatus(appId, request);
+        Long userId = currentUserService.getCurrentUserId();
+        Application app = applicationService.updateStatus(appId, request, userId);
         return ResponseEntity.ok(app);
     }
 
