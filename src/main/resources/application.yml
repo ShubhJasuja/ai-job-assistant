@@ -56,6 +56,10 @@ matching:
   weightRemote: 10
   weightRole: 5
 
+# AI configuration (disabled by default)
+# Set AI_ENABLED=true and AI_API_KEY via env to activate OpenAI.
+# Provider class selected by @ConditionalOnProperty; NoOp is default.
+
 # JWT configuration
 jwt:
   secret: ${JWT_SECRET:change-me-at-least-32-characters-long}
