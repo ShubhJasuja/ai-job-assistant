@@ -9,7 +9,7 @@
 
 ```bash
 # Set production environment variables
-cp .env.prod .env
+cp .env.example .env
 # Edit .env to fill in secrets:
 # - DB_PASSWORD: strong PostgreSQL password
 # - JWT_SECRET: 64+ char random string (openssl rand -hex 32)
@@ -140,5 +140,6 @@ For production, pipe logs to a log aggregator (ELK Stack, Splunk, Datadog, etc.)
 | Rate limiting on auth endpoints | ⚠ Configure in Nginx |
 | Database user has minimal privileges | ✅ |
 | `.env` and `target/` in `.gitignore` | ✅ |
+| Dev `docker-compose.yml` uses `${DB_*}` vars (not hardcoded passwords) | ✅ |
 | Stack traces disabled in prod | ✅ |
 | CORS restricted to known origins | ⚠ Configure allowedOrigins |
