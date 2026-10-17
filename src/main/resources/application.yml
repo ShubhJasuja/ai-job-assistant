@@ -1,0 +1,64 @@
+spring:
+  application:
+    name: ai-job-assistant
+
+  profiles:
+    active: dev
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:jobassistant_db}
+    username: ${DB_USER:jobadmin}
+    password: ${DB_PASSWORD:jobpassword}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate # NEVER use update/create in real projects
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+# Matching engine weights (configurable)
+matching:
+  weightSkills: 40
+  weightExperience: 20
+  weightLocation: 15
+  weightEducation: 10
+  weightRemote: 10
+  weightRole: 5
+
+# JWT configuration
+jwt:
+  secret: ${JWT_SECRET:change-me-at-least-32-characters-long}
+  expiration: 900000
+  refresh-token:
+    expiration: 604800000
