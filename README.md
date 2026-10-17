@@ -8,6 +8,8 @@ Candidates manually track applications against unstructured descriptions; matchi
 
 ## Verified Features
 
+- **Auth & Profile Foundation** (Phase 1 / 2 — `484d9ec` / `f86ad21`): JWT auth (`jjwt` 0.12.6), `CandidateProfile`, `Preferences`, `Education`, `Experience`; `SecurityConfig` with public GET; env-driven Docker (no hardcoded secrets).
+- **Job Ingestion & Management** (Phase 3 — `f46654a`): `ManualJobIngestion`, `V2/V6/V7` migrations, `Application` + `ApplicationStatus` + audit events (`V4`).
 - **Personalized Job Matching** (Phase 4.1 — `4f262cd`): deterministic weight-based engine (skills 40%, experience 20%, location 15%, education 10%, remote 10%, role keywords 5%). Duplicate prevention via `source + sourceJobId`. Public `GET /api/v1/jobs` only.
 - **AI-Powered Job Analysis** (Phase 4.2 — `233e8bc`): `AIProvider` interface; `NoOpAIProvider` default (disabled); `OpenAIProvider` via `RestTemplate` with Bearer auth from env `AI_API_KEY`. Structured JSON output with parse fallback; `sanitize()` defense; disabled by default (`ai.enabled=false`). Endpoint: `POST /api/v1/ai/analyze/{jobId}`.
 - **AI-Powered Resume Tailoring** (Phase 4.3 — `394e5e0`): `POST /api/v1/ai/tailor/{resumeId}/{jobId}`. Uses existing `Resume` entity (`content` field — actual resume text, not metadata only). Current-user isolation via `SecurityContext`; AI disabled default; structured JSON + sanitize.
@@ -168,6 +170,9 @@ Mocked tests for Phase 4.2 (`AIAnalysisTest`) and Phase 4.3 (`ResumeTailoringTes
 
 | Phase | Commit | Scope |
 |---|---|---|
+| 1 | `484d9ec` / `f46654a` | Auth (JWT), Candidate Profile, Job Ingestion & Management |
+| 2 | `484d9ec` / `f86ad21` | Security hardening (remove hardcoded DB creds), Docker/env setup |
+| 3 | `f46654a` | Job ingestion, matching base, application tracker schema |
 | 4.1 | `4f262cd` | Personalized Job Matching |
 | 4.2 | `233e8bc` | AI-Powered Job Analysis |
 | 4.3 | `394e5e0` | AI-Powered Resume Tailoring |

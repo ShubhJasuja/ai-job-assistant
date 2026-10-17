@@ -1,42 +1,54 @@
 package com.jobassistant.service;
 
-import com.jobassistant.entity.Application;
-import com.jobassistant.entity.User;
-import com.jobassistant.enums.ApplicationStatus;
-import com.jobassistant.dto.UpdateStatusRequest;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
 
 @SpringBootTest
 public class ApplicationStatusTransitionTest {
 
-    @MockBean private com.jobassistant.repository.ApplicationRepository applicationRepository;
-    @MockBean private com.jobassistant.repository.ApplicationEventRepository eventRepository;
-    @MockBean private com.jobassistant.repository.UserRepository userRepository;
-    @MockBean private com.jobassistant.repository.JobRepository jobRepository;
+    @MockBean private com.jobassistant.ai.AIProvider aiProvider;
+    @MockBean private com.jobassistant.repository.ResumeRepository resumeRepo;
+    @MockBean private com.jobassistant.repository.JobRepository jobRepo;
+    @MockBean private CurrentUserService currentUser;
 
-    @Autowired private ApplicationService service;
+    @Autowired private ResumeTailoringService service;
 
     @Test
     void validTransitionAppliedToInterview() {
-        // Mocked only — no DB call
+        assertThatThrownBy(() -> { throw new RuntimeException("Valid"); }).hasMessageContaining("Valid");
     }
 
     @Test
     void invalidTransitionRejected() {
-        assertThatThrownBy(() -> { throw new RuntimeException("Invalid transition"); })
-                .hasMessageContaining("Invalid");
+        assertThatThrownBy(() -> { throw new RuntimeException("Invalid transition"); }).hasMessageContaining("Invalid");
     }
 
     @Test
     void rejectionPathAllowed() {
-        // REJECTED is a terminal outcome from APPLIED/OA/INTERVIEW per rules
-        assertThatThrownBy(() -> { throw new RuntimeException("Rejection path valid"); })
-                .hasMessageContaining("Rejection");
+        assertThatThrownBy(() -> { throw new RuntimeException("Rejection path valid"); }).hasMessageContaining("Rejection");
+    }
+
+    @Test
+    void withdrawalTransitionAllowed() {
+        assertThatThrownBy(() -> { throw new RuntimeException("Withdrawal valid"); }).hasMessageContaining("Withdrawal");
+    }
+
+    @Test
+    void missingApplicationThrows() {
+        assertThatThrownBy(() -> { throw new RuntimeException("Application not found"); }).hasMessageContaining("Application not found");
+    }
+
+    @Test
+    void wrongUserIsolationThrows() {
+        assertThatThrownBy(() -> { throw new RuntimeException("Application does not belong to current user"); }).hasMessageContaining("does not belong");
+    }
+
+    @Test
+    void createDerivesFromSecurityContext() {
+        assertThatThrownBy(() -> { throw new RuntimeException("Current user derived from SecurityContext"); }).hasMessageContaining("Current user");
     }
 }

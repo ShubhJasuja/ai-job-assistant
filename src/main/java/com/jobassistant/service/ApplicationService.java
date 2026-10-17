@@ -53,14 +53,14 @@ public class ApplicationService {
         this.jobRepository = jobRepository;
     }
 
-    public Application create(Long userId, Long jobId) {
-        User user = userRepository.findById(userId)
+    public Application create(Long jobId, Long currentUserId) {
+        User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         Job job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new RuntimeException("Job not found"));
 
         // Prevent duplicates
-        if (applicationRepository.findByUserIdAndJobId(userId, jobId).isPresent()) {
+        if (applicationRepository.findByUserIdAndJobId(currentUserId, jobId).isPresent()) {
             throw new RuntimeException("Application already exists for this user and job");
         }
 

@@ -37,7 +37,7 @@ public class ApplicationController {
         // User is NEVER taken from client parameters.
         // It is derived from the authenticated JWT via SecurityContext.
         Long userId = currentUserService.getCurrentUserId();
-        Application app = applicationService.create(userId, jobId);
+        Application app = applicationService.create(jobId, userId);
         return ResponseEntity.ok(app);
     }
 
