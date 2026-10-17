@@ -26,15 +26,17 @@ public class MatchService {
     private final JobMatchRepository matchRepo;
     private final CandidateProfileRepository profileRepo;
     private final MatchingEngine engine;
+    private final CurrentUserService currentUserService;
 
     public MatchService(UserRepository userRepo, JobRepository jobRepo,
                         JobMatchRepository matchRepo, CandidateProfileRepository profileRepo,
-                        MatchingEngine engine) {
+                        MatchingEngine engine, CurrentUserService currentUserService) {
         this.userRepo = userRepo;
         this.jobRepo = jobRepo;
         this.matchRepo = matchRepo;
         this.profileRepo = profileRepo;
         this.engine = engine;
+        this.currentUserService = currentUserService;
     }
 
     @Transactional(readOnly = true)
@@ -65,17 +67,35 @@ public class MatchService {
     @Transactional
     public void recalculateAll() {
         List<User> users = userRepo.findAll();
-        List<Job> jobs = jobRepo.findAll();
+        List<Job> jobs = jobRepo.findByIsActive(Boolean.TRUE);
 
         for (User user : users) {
             CandidateProfile profile = profileRepo.findByUserId(user.getId())
                     .orElse(null);
             if (profile == null) continue;
 
+            // Clear existing matches for user to prevent duplicate (user,job) pairs.
+            matchRepo.deleteByUserId(user.getId());
+
             for (Job job : jobs) {
+                if (job.getIsActive() == null || !job.getIsActive()) continue;
                 JobMatch match = engine.compute(user, profile, job);
                 matchRepo.save(match);
             }
+        }
+    }
+
+    @Transactional
+    public void recalculateForCurrentUser() {
+        User user = currentUserService.getCurrentUser();
+        CandidateProfile profile = profileRepo.findByUserId(user.getId()).orElse(null);
+        if (profile == null) return;
+        List<Job> jobs = jobRepo.findByIsActive(Boolean.TRUE);
+        matchRepo.deleteByUserId(user.getId());
+        for (Job job : jobs) {
+            if (job.getIsActive() == null || !job.getIsActive()) continue;
+            JobMatch match = engine.compute(user, profile, job);
+            matchRepo.save(match);
         }
     }
 }
