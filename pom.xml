@@ -124,6 +124,11 @@
             <version>1.40.0</version>
             <!-- production runtime required -->
         </dependency>
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

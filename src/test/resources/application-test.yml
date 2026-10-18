@@ -1,36 +1,18 @@
 spring:
-  application:
-    name: ai-job-assistant-test
-
-  datasource:
-    url: jdbc:postgresql://localhost:5432/jobassistant_test
-    username: jobadmin
-    password: jobpassword
-    driver-class-name: org.postgresql.Driver
-
   jpa:
-    hibernate:
-      ddl-auto: validate
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-
+        dialect: org.hibernate.dialect.H2Dialect
+        id:
+          new_generator_mappings: false
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
   flyway:
-    enabled: true
-    baseline-on-migrate: true
-    locations: classpath:db/migration
-
-  data:
-    redis:
-      host: localhost
-      port: 6379
-
-server:
-  port: 0
-
-logging:
-  level:
-    com.jobassistant: INFO
-
-# Use the test profile for Flyway as well
-spring.flyway.enabled: true
+    enabled: false
