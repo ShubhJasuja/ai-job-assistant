@@ -20,6 +20,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(ResumeController.class)
+@Import({com.jobassistant.security.JwtService.class, com.jobassistant.security.SecurityConfig.class})
 public class ResumeControllerTest {
 
     @Autowired private MockMvc mvc;
@@ -68,6 +69,14 @@ public class ResumeControllerTest {
     }
 
     @Test
+    @WithMockUser
+    void crossUserAccessDenied() throws Exception {
+        when(currentUserService.getCurrentUserId()).thenReturn(99L);
+        when(resumeService.getById(1L)).thenThrow(new RuntimeException("does not belong"));
+        mvc.perform(get("/api/v1/resumes/1"))
+                .andExpect(status().isInternalServerError());
+    }
+
     void unauthenticatedDenied() throws Exception {
         mvc.perform(get("/api/v1/resumes"))
                 .andExpect(status().isForbidden()); // Spring Security default for unauthenticated
