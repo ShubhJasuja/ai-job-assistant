@@ -19,13 +19,15 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import com.jobassistant.security.JwtService;
+
 @WebMvcTest(ResumeController.class)
-@Import({com.jobassistant.security.JwtService.class, com.jobassistant.security.SecurityConfig.class})
 public class ResumeControllerTest {
 
     @Autowired private MockMvc mvc;
     @MockBean private ResumeService resumeService;
     @MockBean private CurrentUserService currentUserService;
+    @MockBean private JwtService jwtService;
 
     @Test
     @WithMockUser
