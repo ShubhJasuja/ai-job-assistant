@@ -98,4 +98,22 @@ public class MatchingEngineTest {
         JobMatch match = engine.compute(user, empty, job);
         assertNotNull(match);
     }
+
+    @Test
+    void sameJobDifferentScoresForDifferentProfiles() {
+        JobMatch m1 = engine.compute(user, profile, job);
+        CandidateProfile profile2 = CandidateProfile.builder()
+                .id(2L).user(User.builder().id(99L).email("other@example.com").build())
+                .headline("Dev").preferredRoles("Backend Developer").preferredLocations("New York")
+                .remotePreference(false).experienceLevel(1).skills(List.of()).build();
+        JobMatch m2 = engine.compute(User.builder().id(99L).build(), profile2, job);
+        assertNotEquals(m1.getScore(), m2.getScore(), "Same job should score differently per profile/preferences");
+    }
+
+    @Test
+    void crossUserIsolation() {
+        JobMatch m = engine.compute(user, profile, job);
+        assertEquals(user.getId(), m.getUser().getId());
+        assertNotNull(m.getScore());
+    }
 }
