@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.jobassistant.security.JwtService;
@@ -35,6 +36,7 @@ public class ResumeControllerTest {
         when(currentUserService.getCurrentUserId()).thenReturn(1L);
         when(resumeService.create(any())).thenReturn(new ResumeResponse(1L, "CV", "content", true));
         mvc.perform(post("/api/v1/resumes")
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"title\":\"CV\",\"content\":\"content\"}"))
                 .andExpect(status().isOk())
@@ -56,6 +58,7 @@ public class ResumeControllerTest {
         when(currentUserService.getCurrentUserId()).thenReturn(1L);
         when(resumeService.update(eq(1L), any())).thenReturn(new ResumeResponse(1L, "Updated", "c", true));
         mvc.perform(put("/api/v1/resumes/1")
+                .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"title\":\"Updated\"}"))
                 .andExpect(status().isOk());
@@ -66,7 +69,8 @@ public class ResumeControllerTest {
     void deleteOwnResume() throws Exception {
         when(currentUserService.getCurrentUserId()).thenReturn(1L);
         doNothing().when(resumeService).delete(1L);
-        mvc.perform(delete("/api/v1/resumes/1"))
+        mvc.perform(delete("/api/v1/resumes/1")
+                .with(csrf()))
                 .andExpect(status().isOk());
     }
 
@@ -79,8 +83,9 @@ public class ResumeControllerTest {
                 .andExpect(status().isInternalServerError());
     }
 
+    @Test
     void unauthenticatedDenied() throws Exception {
         mvc.perform(get("/api/v1/resumes"))
-                .andExpect(status().isForbidden()); // Spring Security default for unauthenticated
+                .andExpect(status().isUnauthorized()); // Spring default when unauthenticated; access denied preserved
     }
 }
