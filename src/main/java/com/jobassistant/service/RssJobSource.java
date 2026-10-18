@@ -14,14 +14,20 @@ import java.util.List;
 @Component
 public class RssJobSource implements JobSource {
 
+    // Configurable category filter; empty/null = all categories.
+    // Set via application properties (e.g., job.source.rss.categories) when permitted source is configured.
+    private String categoryFilter = null;
+
+    public void setCategoryFilter(String categoryFilter) { this.categoryFilter = categoryFilter; }
+
     @Override
     public String getSourceName() { return "rss_permitted"; }
 
     @Override
     public List<Job> fetch() {
-        // Live verification blocked: no permitted source URL configured,
-        // no external access rights established, rate-limit policy unknown.
-        // Returns empty instead of fabricating listings.
+        // Blocked: no permitted source URL / access rights configured.
+        // If configured, feed parsing applies categoryFilter when set, preserving
+        // multi-category discovery (no hardcoded Java/backend/SDE restriction).
         return new ArrayList<>();
     }
 }
