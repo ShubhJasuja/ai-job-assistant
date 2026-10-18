@@ -37,6 +37,8 @@ public class ApplicationDraft {
 
     private Boolean approved = false;
 
+    private String versionHash; // content-based version identifier for approval binding
+
     private LocalDateTime approvalTimestamp;
 
     private String status = "PENDING";

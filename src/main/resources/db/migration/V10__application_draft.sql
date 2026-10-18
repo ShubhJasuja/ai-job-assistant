@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS application_drafts (
     unresolved_fields VARCHAR(500), -- comma-separated missing/ambiguous
     approved BOOLEAN DEFAULT FALSE,
     approval_timestamp TIMESTAMP,
+    version_hash VARCHAR(64), -- content hash for approval binding
     status VARCHAR(50) DEFAULT 'PENDING', -- PENDING / READY / SUBMITTED / FAILED / UNCERTAIN
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
