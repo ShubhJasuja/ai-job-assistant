@@ -37,6 +37,6 @@ public class NoOpAIProvider implements AIProvider {
 
     @Override
     public CoverLetterResult generateCoverLetter(CandidateProfile profile, Job job) {
-        return new CoverLetterResult();
+        return CoverLetterResult.builder().draftCoverLetter("[Cover letter generation requires AI_API_KEY configuration; disabled by default]").keyPoints("Not generated — AI disabled").approved(false).build();
     }
 }

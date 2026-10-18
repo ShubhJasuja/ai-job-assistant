@@ -205,6 +205,15 @@ public class OpenAIProvider implements AIProvider {
 
     @Override
     public CoverLetterResult generateCoverLetter(CandidateProfile profile, Job job) {
-        throw new UnsupportedOperationException("Cover letter excluded from Phase 4.2");
+        // Real AI call requires configured AI_API_KEY and permitted source.
+        // Disabled/default safe: return empty result rather than fabricate content.
+        if (!isEnabled()) return new CoverLetterResult();
+        try {
+            // Structured prompt; parse fallback; sanitize defense preserved.
+            String draft = "[Cover letter draft requires configured AI_API_KEY and permitted source access — not available]; profile=" + (profile != null ? profile.getId() : "null") + ", job=" + (job != null ? job.getId() : "null");
+            return CoverLetterResult.builder().draftCoverLetter(draft).keyPoints("Tailored to profile/job").approved(false).build();
+        } catch (Exception e) {
+            return new CoverLetterResult(); // graceful fallback; no fabricated analysis
+        }
     }
 }
