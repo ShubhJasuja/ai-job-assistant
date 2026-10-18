@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS interview_preparation (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    resume_id BIGINT REFERENCES resumes(id) ON DELETE SET NULL,
+    job_id BIGINT REFERENCES jobs(id) ON DELETE SET NULL,
+    suggested_questions TEXT,
+    tips TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
