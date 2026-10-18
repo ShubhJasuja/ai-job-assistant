@@ -3,6 +3,8 @@ package com.jobassistant.service;
 import com.jobassistant.dto.AuthRequest;
 import com.jobassistant.dto.AuthResponse;
 import com.jobassistant.entity.User;
+import com.jobassistant.entity.CandidateProfile;
+import com.jobassistant.repository.CandidateProfileRepository;
 import com.jobassistant.repository.UserRepository;
 import com.jobassistant.security.JwtService;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -19,15 +21,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
 
     private final UserRepository userRepository;
+    private final CandidateProfileRepository profileRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
 
     public AuthService(UserRepository userRepository,
+                       CandidateProfileRepository profileRepository,
                        PasswordEncoder passwordEncoder,
                        JwtService jwtService,
                        AuthenticationManager authenticationManager) {
         this.userRepository = userRepository;
+        this.profileRepository = profileRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.authenticationManager = authenticationManager;
@@ -46,6 +51,13 @@ public class AuthService {
                 .build();
 
         User saved = userRepository.save(user);
+
+        // Create an associated candidate profile in the same transaction so that
+        // GET /api/v1/profile can always retrieve it for a registered user.
+        CandidateProfile profile = CandidateProfile.builder()
+                .user(saved)
+                .build();
+        profileRepository.save(profile);
 
         String accessToken = jwtService.generateAccessToken(saved);
         String refreshToken = jwtService.generateRefreshToken(saved);
