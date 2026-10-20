@@ -5,6 +5,8 @@ export const jobsAPI = {
   list: () => api.get<Job[]>('/jobs').then((r) => r.data),
   get: (id: number) => api.get<Job>(`/jobs/${id}`).then((r) => r.data),
   stats: () => api.get<JobStats>('/applications/stats').then((r) => r.data),
+  authenticate: (email: string, password: string, register: boolean) =>
+    api.post<{ accessToken: string; refreshToken?: string }>(`/auth/${register ? 'register' : 'login'}`, { email, password }).then((r) => r.data),
 };
 
 export const matchAPI = {

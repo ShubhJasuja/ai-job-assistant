@@ -2,6 +2,7 @@ package com.jobassistant.controller;
 
 import com.jobassistant.entity.Application;
 import com.jobassistant.entity.ApplicationEvent;
+import com.jobassistant.dto.ApplicationResponse;
 import com.jobassistant.service.ApplicationService;
 import com.jobassistant.service.CurrentUserService;
 import org.junit.jupiter.api.Test;
@@ -13,6 +14,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 import static org.mockito.Mockito.*;
@@ -29,6 +31,21 @@ public class ApplicationControllerTest {
     @MockBean private ApplicationService applicationService;
     @MockBean private CurrentUserService currentUserService;
     @MockBean private JwtService jwtService;
+
+    @Test
+    @WithMockUser
+    void listApplicationsForCurrentUser() throws Exception {
+        when(currentUserService.getCurrentUserId()).thenReturn(1L);
+        ApplicationResponse response = new ApplicationResponse();
+        response.setId(7L);
+        response.setJobTitle("Product Designer");
+        when(applicationService.getApplicationsForUser(1L)).thenReturn(List.of(response));
+
+        mvc.perform(get("/api/v1/applications"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(7))
+                .andExpect(jsonPath("$[0].jobTitle").value("Product Designer"));
+    }
 
     @Test
     @WithMockUser

@@ -1,6 +1,7 @@
 package com.jobassistant.controller;
 
 import com.jobassistant.dto.UpdateStatusRequest;
+import com.jobassistant.dto.ApplicationResponse;
 import com.jobassistant.entity.Application;
 import com.jobassistant.entity.ApplicationEvent;
 import com.jobassistant.service.ApplicationService;
@@ -30,6 +31,12 @@ public class ApplicationController {
     public ApplicationController(ApplicationService applicationService, CurrentUserService currentUserService) {
         this.applicationService = applicationService;
         this.currentUserService = currentUserService;
+    }
+
+    @GetMapping
+    public ResponseEntity<List<ApplicationResponse>> list() {
+        Long userId = currentUserService.getCurrentUserId();
+        return ResponseEntity.ok(applicationService.getApplicationsForUser(userId));
     }
 
     @PostMapping

@@ -3,13 +3,14 @@ export interface Job {
   title: string;
   company: string;
   location: string;
-  remoteStatus: string;
+  remoteStatus?: string | null;
+  employmentType?: string | null;
   description: string;
-  skills: string[];
-  source: string;
-  postedAt: string;
-  isActive: boolean;
-  url?: string;
+  source?: string | null;
+  postedDate?: string | null;
+  ingestedAt?: string | null;
+  isActive?: boolean;
+  applicationUrl?: string | null;
 }
 
 export interface JobMatch {
@@ -21,12 +22,15 @@ export interface JobMatch {
 
 export interface Application {
   id: number;
-  userId: number;
   jobId: number;
   status: string;
   notes?: string;
   createdAt: string;
   updatedAt?: string;
+  jobTitle: string;
+  company: string;
+  location?: string;
+  applicationUrl?: string;
 }
 
 export interface Resume {
@@ -44,7 +48,8 @@ export interface UserProfile {
 }
 
 export interface AuthResponse {
-  token: string;
+  accessToken: string;
+  refreshToken?: string;
 }
 
 export interface JobStats {

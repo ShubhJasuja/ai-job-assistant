@@ -1,6 +1,7 @@
 package com.jobassistant.service;
 
 import com.jobassistant.dto.UpdateStatusRequest;
+import com.jobassistant.dto.ApplicationResponse;
 import com.jobassistant.entity.Application;
 import com.jobassistant.entity.ApplicationEvent;
 import com.jobassistant.entity.Job;
@@ -131,6 +132,12 @@ public class ApplicationService {
         return eventRepository.findByApplicationId(applicationId,
                 org.springframework.data.domain.PageRequest.of(0, 100))
                 .getContent();
+    }
+
+    public List<ApplicationResponse> getApplicationsForUser(Long userId) {
+        return applicationRepository.findRecentByUserId(userId).stream()
+                .map(ApplicationResponse::from)
+                .toList();
     }
 
     public Map<ApplicationStatus, Long> getStatusCounts(Long userId) {
