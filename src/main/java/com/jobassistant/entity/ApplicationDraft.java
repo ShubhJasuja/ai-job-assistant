@@ -37,14 +37,17 @@ public class ApplicationDraft {
 
     private Boolean approved = false;
 
+    @Column(name = "version_hash", length = 64)
     private String versionHash; // content-based version identifier for approval binding
 
     private LocalDateTime approvalTimestamp;
 
     private String status = "PENDING";
 
+    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
+    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
     @PrePersist

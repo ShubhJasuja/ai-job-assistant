@@ -28,6 +28,10 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+  error:
+    include-message: NEVER
+    include-stacktrace: NEVER
+    include-exception: false
 
 management:
   endpoints:
@@ -49,10 +53,6 @@ logging:
     com.jobassistant: INFO
     org.springframework: WARN
     org.hibernate: WARN
-
-# Production security
-server:
-  error:
-    include-message: false
-    include-stacktrace: false
-    include-exception: false
+    com.zaxxer.hikari: DEBUG
+    org.postgresql: DEBUG
+    org.flywaydb: DEBUG

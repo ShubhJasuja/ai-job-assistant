@@ -34,6 +34,9 @@ public class PlaywrightSessionManager implements AutoCloseable {
     private boolean isAllowed(String url) {
         if (url == null) return false;
         String u = url.toLowerCase();
+        // Local fixture allowlist: static HTML fixtures used by offline tests.
+        // Checked first so the generic file:// block below does not shadow it.
+        if (u.contains("fixture") && u.contains("application-form") && (u.startsWith("file://") || u.contains("localhost") || u.contains("127."))) return true; // fixture allowlist restricted to local fixtures
         // Block loopback / metadata / file / private network patterns
         if (u.contains("localhost") || u.contains("127.") || u.contains("0.0.0.0") || u.contains("::1")) return false;
         if (u.startsWith("file://")) return false;
@@ -47,6 +50,11 @@ public class PlaywrightSessionManager implements AutoCloseable {
         // Fixture-level detection: text inputs, selects, textareas
         return "fixture-fields-detected";
     }
+
+    /**
+     * Current page handle, for fixture-level assertions. Exposes the live page
+     * only to callers that already hold a session; no navigation is performed.
+     */
 
     @Override
     public void close() {

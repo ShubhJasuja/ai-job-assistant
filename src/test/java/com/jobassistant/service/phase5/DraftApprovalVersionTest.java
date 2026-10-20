@@ -8,13 +8,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
+@ActiveProfiles("test")
 @WithMockUser(username = "testuser")
 public class DraftApprovalVersionTest {
 
@@ -27,11 +30,9 @@ public class DraftApprovalVersionTest {
     @Autowired
     private UserRepository userRepository;
 
-    private static int userSeq = 0;
-
     private User persistedUser() {
         User u = User.builder()
-            .email("phase5-test-" + (++userSeq) + "@example.com")
+            .email("phase5-test-" + UUID.randomUUID() + "@example.com")
             .passwordHash("hash")
             .name("Phase5 Tester")
             .build();
