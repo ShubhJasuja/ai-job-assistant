@@ -8,3 +8,7 @@ target/
 *.iml
 .idea/
 .vscode/
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+*.dump

@@ -1,6 +1,6 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { applicationsAPI } from './services/applications';
-import { jobsAPI } from './services/jobs';
+import { JobSearchSuggestion, JobUserState, jobsAPI } from './services/jobs';
 import { Application, Job } from './types';
 import './styles.css';
 
@@ -12,6 +12,8 @@ const navigation: { label: View; icon: string }[] = [
   { label: 'Saved jobs', icon: '♡' },
   { label: 'Applications', icon: '▤' },
 ];
+
+const JOBS_PAGE_SIZE = 24;
 
 function getErrorMessage(error: unknown) {
   if (typeof error === 'object' && error !== null && 'response' in error) {
@@ -44,13 +46,42 @@ function initials(company?: string) {
 export default function App() {
   const [view, setView] = useState<View>('Overview');
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [totalJobCount, setTotalJobCount] = useState(0);
+  const [hasMoreJobs, setHasMoreJobs] = useState(false);
   const [applications, setApplications] = useState<Application[]>([]);
   const [applicationsError, setApplicationsError] = useState('');
   const [applicationsLoading, setApplicationsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [query, setQuery] = useState('');
+  const [keywordSuggestions, setKeywordSuggestions] = useState<JobSearchSuggestion[]>([]);
+  const [locationSuggestions, setLocationSuggestions] = useState<JobSearchSuggestion[]>([]);
+  const [activeSuggestionField, setActiveSuggestionField] = useState<'keyword' | 'location' | null>(null);
+  const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
+  const [companyQuery, setCompanyQuery] = useState('');
+  const [locationQuery, setLocationQuery] = useState('');
+  const [skillQuery, setSkillQuery] = useState('');
+  const [stateFilter, setStateFilter] = useState('ALL');
   const [remoteOnly, setRemoteOnly] = useState(false);
+  const [authToken, setAuthToken] = useState(() => localStorage.getItem('jwt_token'));
+  const [pendingState, setPendingState] = useState<JobUserState | null>(null);
+  const [expandedJobIds, setExpandedJobIds] = useState<number[]>([]);
+  const [manualJobOpen, setManualJobOpen] = useState(false);
+  const [manualJobBusy, setManualJobBusy] = useState(false);
+  const [refreshBusy, setRefreshBusy] = useState(false);
+  const [manualJobError, setManualJobError] = useState('');
+  const jobRequestSequence = useRef(0);
+  const [manualJob, setManualJob] = useState({
+    title: '',
+    company: '',
+    location: '',
+    remoteStatus: '',
+    employmentType: '',
+    applicationUrl: '',
+    skills: '',
+    description: '',
+  });
   const [savedIds, setSavedIds] = useState<number[]>(() => {
     try {
       return JSON.parse(localStorage.getItem('saved_job_ids') || '[]') as number[];
@@ -66,17 +97,47 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [authBusy, setAuthBusy] = useState(false);
   const [toast, setToast] = useState('');
-  const token = localStorage.getItem('jwt_token');
+  const token = authToken;
 
-  async function loadJobs() {
-    setLoading(true);
-    setLoadError('');
+  async function loadJobs(append = false) {
+    const requestSequence = ++jobRequestSequence.current;
+    if (append) setLoadingMore(true);
+    else {
+      setLoading(true);
+      setLoadingMore(false);
+      setLoadError('');
+    }
     try {
-      setJobs(await jobsAPI.list());
+      const filters = {
+        keyword: query.trim() || undefined,
+        company: companyQuery.trim() || undefined,
+        location: locationQuery.trim() || undefined,
+        skill: skillQuery.trim() || undefined,
+        remote: remoteOnly ? true : undefined,
+        state: view === 'Saved jobs' && token ? 'SAVED' : stateFilter,
+        offset: append ? jobs.length : 0,
+        limit: JOBS_PAGE_SIZE,
+      };
+      const result = token
+        ? await jobsAPI.discoverPage(filters)
+        : await jobsAPI.searchPage({ ...filters, active: true });
+      if (requestSequence !== jobRequestSequence.current) return;
+      setJobs((current) => append ? [...current, ...result.items] : result.items);
+      setTotalJobCount(result.totalElements);
+      setHasMoreJobs(result.hasNext);
+      if (token) {
+        const pageSavedIds = result.items.filter((job) => job.userState === 'INTERESTED').map((job) => job.id);
+        setSavedIds((current) => Array.from(new Set([...current, ...pageSavedIds])));
+      }
     } catch (error) {
-      setLoadError(getErrorMessage(error));
+      if (requestSequence !== jobRequestSequence.current) return;
+      if (append) setToast(getErrorMessage(error));
+      else setLoadError(getErrorMessage(error));
     } finally {
-      setLoading(false);
+      if (requestSequence === jobRequestSequence.current) {
+        if (append) setLoadingMore(false);
+        else setLoading(false);
+      }
     }
   }
 
@@ -92,9 +153,66 @@ export default function App() {
     }
   }
 
+  async function refreshJobSources() {
+    if (!token) {
+      openAuth();
+      return;
+    }
+    setRefreshBusy(true);
+    try {
+      const summary = await jobsAPI.refreshSources();
+      await loadJobs();
+      const failedSources = summary.sources.filter((source) => !source.successful).map((source) => source.source);
+      setToast(failedSources.length
+        ? `Some sources were unavailable: ${failedSources.join(', ')}`
+        : `Job refresh complete: ${summary.added} new, ${summary.updated} updated`);
+    } catch (error) {
+      setToast(getErrorMessage(error));
+    } finally {
+      setRefreshBusy(false);
+    }
+  }
+
   useEffect(() => {
-    void loadJobs();
-  }, []);
+    const timeout = window.setTimeout(() => void loadJobs(), 250);
+    return () => window.clearTimeout(timeout);
+  }, [authToken, companyQuery, locationQuery, query, remoteOnly, skillQuery, stateFilter, view]);
+
+  useEffect(() => {
+    const value = query.trim();
+    if (!value) {
+      setKeywordSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      void jobsAPI.suggestions(value, 'keyword')
+        .then((result) => { if (!cancelled) setKeywordSuggestions(result); })
+        .catch((error) => { if (!cancelled) console.error('Could not load search suggestions:', error); });
+    }, 160);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [query]);
+
+  useEffect(() => {
+    const value = locationQuery.trim();
+    if (!value) {
+      setLocationSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      void jobsAPI.suggestions(value, 'location')
+        .then((result) => { if (!cancelled) setLocationSuggestions(result); })
+        .catch((error) => { if (!cancelled) console.error('Could not load location suggestions:', error); });
+    }, 160);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [locationQuery]);
 
   useEffect(() => {
     if (token) void loadApplications();
@@ -102,8 +220,8 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
-    localStorage.setItem('saved_job_ids', JSON.stringify(savedIds));
-  }, [savedIds]);
+    if (!token) localStorage.setItem('saved_job_ids', JSON.stringify(savedIds));
+  }, [savedIds, token]);
 
   useEffect(() => {
     if (!toast) return;
@@ -117,22 +235,84 @@ export default function App() {
     return source.filter((job) => {
       const matchesQuery =
         !normalizedQuery ||
-        [job.title, job.company, job.location, job.description, job.employmentType]
+        [job.title, job.company, job.location, job.description, job.employmentType, ...(job.skills || [])]
           .filter(Boolean)
           .some((part) => part!.toLowerCase().includes(normalizedQuery));
       const matchesRemote =
         !remoteOnly || /remote|hybrid/i.test(`${job.remoteStatus || ''} ${job.location || ''}`);
-      return matchesQuery && matchesRemote && job.isActive !== false;
+      const matchesLocalSaved = token || view !== 'Saved jobs' || savedIds.includes(job.id);
+      return matchesQuery && matchesRemote && matchesLocalSaved && job.isActive !== false;
     });
-  }, [jobs, query, remoteOnly, savedIds, view]);
+  }, [jobs, query, remoteOnly, savedIds, token, view]);
 
   const remoteCount = jobs.filter((job) => /remote/i.test(`${job.remoteStatus || ''} ${job.location || ''}`)).length;
   const companiesCount = new Set(jobs.map((job) => job.company).filter(Boolean)).size;
 
+  function updateLocalJobState(job: Job, state: JobUserState) {
+    setJobs((current) => current.map((item) => item.id === job.id ? { ...item, userState: state } : item));
+    if (state === 'INTERESTED') setSavedIds((current) => current.includes(job.id) ? current : [...current, job.id]);
+    else setSavedIds((current) => current.filter((id) => id !== job.id));
+  }
+
+  async function updateJobState(job: Job, state: JobUserState) {
+    if (!token) {
+      setSelectedJob(job);
+      setPendingState(state);
+      setAuthError('');
+      setAuthOpen(true);
+      return;
+    }
+    try {
+      await jobsAPI.updateState(job.id, state);
+      updateLocalJobState(job, state);
+      if (state === 'APPLIED') await loadApplications();
+      setToast(state === 'INTERESTED' ? 'Saved to your shortlist' : state === 'NOT_INTERESTED' ? 'We’ll show fewer roles like this' : state === 'APPLIED' ? 'Marked as applied and added to your tracker' : 'Removed from your saved roles');
+      await loadJobs();
+    } catch (error) {
+      setToast(getErrorMessage(error));
+    }
+  }
+
   function toggleSaved(job: Job) {
     const isSaved = savedIds.includes(job.id);
-    setSavedIds((current) => (isSaved ? current.filter((id) => id !== job.id) : [...current, job.id]));
-    setToast(isSaved ? 'Removed from your saved jobs' : 'Saved to your shortlist');
+    if (!token) {
+      setSavedIds((current) => isSaved ? current.filter((id) => id !== job.id) : [...current, job.id]);
+      setToast(isSaved ? 'Removed from your saved jobs' : 'Saved to your shortlist');
+      return;
+    }
+
+    void updateJobState(job, isSaved ? 'NONE' : 'INTERESTED');
+  }
+
+  function chooseSuggestion(field: 'keyword' | 'location', value: string) {
+    if (field === 'keyword') setQuery(value);
+    else setLocationQuery(value);
+    setActiveSuggestionField(null);
+    setActiveSuggestionIndex(-1);
+  }
+
+  function handleSuggestionKeyDown(
+    event: KeyboardEvent<HTMLInputElement>,
+    field: 'keyword' | 'location',
+    suggestions: JobSearchSuggestion[],
+  ) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveSuggestionField(field);
+      setActiveSuggestionIndex((index) => {
+        if (suggestions.length === 0) return -1;
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        if (index < 0) return direction > 0 ? 0 : suggestions.length - 1;
+        return (index + direction + suggestions.length) % suggestions.length;
+      });
+    } else if (event.key === 'Enter' && activeSuggestionField === field && activeSuggestionIndex >= 0) {
+      event.preventDefault();
+      const suggestion = suggestions[activeSuggestionIndex];
+      if (suggestion) chooseSuggestion(field, suggestion.value);
+    } else if (event.key === 'Escape') {
+      setActiveSuggestionField(null);
+      setActiveSuggestionIndex(-1);
+    }
   }
 
   async function submitApplication(event: FormEvent<HTMLFormElement>) {
@@ -143,10 +323,23 @@ export default function App() {
       const result = await jobsAPI.authenticate(email, password, registerMode);
       localStorage.setItem('jwt_token', result.accessToken);
       if (result.refreshToken) localStorage.setItem('refresh_token', result.refreshToken);
+      setAuthToken(result.accessToken);
       setAuthOpen(false);
       setPassword('');
       setToast(registerMode ? 'Your account is ready' : 'Welcome back');
-      if (selectedJob) {
+      if (selectedJob && pendingState) {
+        const job = selectedJob;
+        const state = pendingState;
+        setPendingState(null);
+        try {
+          await jobsAPI.updateState(job.id, state);
+          if (state === 'APPLIED') await loadApplications();
+          setToast(state === 'INTERESTED' ? 'Saved to your shortlist' : state === 'NOT_INTERESTED' ? 'We’ll show fewer roles like this' : 'Marked as applied and added to your tracker');
+        } catch (error) {
+          setToast(getErrorMessage(error));
+        }
+        setSelectedJob(null);
+      } else if (selectedJob) {
         try {
           await applicationsAPI.create(selectedJob.id);
           await loadApplications();
@@ -162,25 +355,48 @@ export default function App() {
     }
   }
 
-  async function trackJob(job: Job) {
-    if (!localStorage.getItem('jwt_token')) {
-      setSelectedJob(job);
+  function openAuth() {
+    setSelectedJob(null);
+    setPendingState(null);
+    setAuthError('');
+    setAuthOpen(true);
+  }
+
+  async function submitManualJob(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setManualJobError('');
+    if (!token) {
+      setManualJobError('Sign in to add a job to the shared job board.');
       setAuthOpen(true);
       return;
     }
+    setManualJobBusy(true);
     try {
-      await applicationsAPI.create(job.id);
-      await loadApplications();
-      setToast('Job added to your application tracker');
+      await jobsAPI.create({
+        title: manualJob.title.trim(),
+        company: manualJob.company.trim(),
+        location: manualJob.location.trim() || undefined,
+        remoteStatus: manualJob.remoteStatus || undefined,
+        employmentType: manualJob.employmentType.trim() || undefined,
+        applicationUrl: manualJob.applicationUrl.trim() || undefined,
+        skills: manualJob.skills.split(',').map((skill) => skill.trim()).filter(Boolean),
+        description: manualJob.description.trim() || undefined,
+      });
+      setManualJobOpen(false);
+      setManualJob({ title: '', company: '', location: '', remoteStatus: '', employmentType: '', applicationUrl: '', skills: '', description: '' });
+      setToast('Job added to the discovery feed');
+      await loadJobs();
     } catch (error) {
-      setToast(getErrorMessage(error));
+      setManualJobError(getErrorMessage(error));
+    } finally {
+      setManualJobBusy(false);
     }
   }
 
-  function openAuth() {
-    setSelectedJob(null);
-    setAuthError('');
-    setAuthOpen(true);
+  function toggleExplanation(jobId: number) {
+    setExpandedJobIds((current) => current.includes(jobId)
+      ? current.filter((id) => id !== jobId)
+      : [...current, jobId]);
   }
 
   return (
@@ -197,6 +413,7 @@ export default function App() {
             <button
               key={item.label}
               className={`nav-item ${view === item.label ? 'active' : ''}`}
+              aria-current={view === item.label ? 'page' : undefined}
               onClick={() => setView(item.label)}
             >
               <span className="nav-icon">{item.icon}</span>
@@ -259,7 +476,7 @@ export default function App() {
               <section className="stats-grid" aria-label="Job search summary">
                 <article className="stat-card">
                   <div className="stat-top"><span className="stat-icon icon-lilac">⌕</span><span className="stat-label">OPEN OPPORTUNITIES</span></div>
-                  <div className="stat-value">{loading ? '—' : jobs.length}</div>
+                  <div className="stat-value">{loading ? '—' : totalJobCount}</div>
                   <div className="stat-foot"><span className="stat-dot dot-violet" /> Roles in your discovery feed</div>
                 </article>
                 <article className="stat-card">
@@ -288,7 +505,11 @@ export default function App() {
                 <h2>{view === 'Saved jobs' ? 'Your shortlist' : view === 'Discover jobs' ? 'Explore opportunities' : view === 'Applications' ? 'Your application journey' : 'A few places to start'}</h2>
                 <p>{view === 'Saved jobs' ? 'The roles you have saved for a closer look.' : view === 'Applications' ? 'Keep your applications moving, one thoughtful step at a time.' : 'Thoughtful opportunities for wherever you want to go next.'}</p>
               </div>
-              <button className="text-link" onClick={() => setView('Discover jobs')}>Browse all roles <span>↗</span></button>
+              <div className="section-heading-actions">
+                {view !== 'Applications' && token && <button className="secondary-button" onClick={() => void refreshJobSources()} disabled={refreshBusy}>{refreshBusy ? 'Refreshing…' : '↻ Refresh jobs'}</button>}
+                {view !== 'Applications' && <button className="secondary-button add-job-button" onClick={() => setManualJobOpen(true)}>＋ Add a job</button>}
+                {view !== 'Discover jobs' && <button className="text-link" onClick={() => setView('Discover jobs')}>Browse all roles <span>↗</span></button>}
+              </div>
             </div>
 
             {view === 'Applications' ? (
@@ -337,15 +558,104 @@ export default function App() {
             ) : (
               <>
                 <div className="job-toolbar">
-                  <label className="search-box">
-                    <span className="search-icon">⌕</span>
-                    <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search roles, companies, or places..." />
-                    {query && <button aria-label="Clear search" onClick={() => setQuery('')}>×</button>}
-                  </label>
+                  <div className="autocomplete-field search-autocomplete">
+                    <label className="search-box">
+                      <span className="search-icon">⌕</span>
+                      <input
+                        role="combobox"
+                        aria-label="Search jobs by role, technology, or company"
+                        aria-autocomplete="list"
+                        aria-expanded={activeSuggestionField === 'keyword' && keywordSuggestions.length > 0}
+                        aria-controls="keyword-suggestions"
+                        aria-activedescendant={activeSuggestionField === 'keyword' && activeSuggestionIndex >= 0
+                          ? `keyword-suggestion-${activeSuggestionIndex}` : undefined}
+                        value={query}
+                        onFocus={() => { setActiveSuggestionField('keyword'); setActiveSuggestionIndex(-1); }}
+                        onBlur={() => { setActiveSuggestionField(null); setActiveSuggestionIndex(-1); }}
+                        onChange={(event) => { setQuery(event.target.value); setKeywordSuggestions([]); setActiveSuggestionIndex(-1); }}
+                        onKeyDown={(event) => handleSuggestionKeyDown(event, 'keyword', keywordSuggestions)}
+                        placeholder="Search roles, technologies, companies..."
+                      />
+                      {query && <button type="button" aria-label="Clear search" onClick={() => { setQuery(''); setActiveSuggestionIndex(-1); }}>×</button>}
+                    </label>
+                    {activeSuggestionField === 'keyword' && keywordSuggestions.length > 0 && (
+                      <div className="suggestion-list" id="keyword-suggestions" role="listbox" aria-label="Search suggestions">
+                        {keywordSuggestions.map((suggestion, index) => (
+                          <button
+                            type="button"
+                            role="option"
+                            id={`keyword-suggestion-${index}`}
+                            aria-selected={index === activeSuggestionIndex}
+                            className="suggestion-option"
+                            key={`${suggestion.category}-${suggestion.value}`}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => chooseSuggestion('keyword', suggestion.value)}
+                          >
+                            <span>{suggestion.value}</span>
+                            <small>{suggestion.category.toLowerCase()}</small>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button className={`filter-button ${remoteOnly ? 'filter-active' : ''}`} onClick={() => setRemoteOnly((value) => !value)}>
                     <span>☷</span> Remote friendly <span className="filter-toggle">{remoteOnly ? '✓' : '+'}</span>
                   </button>
-                  <div className="results-count">{loading ? 'Finding roles...' : `${filteredJobs.length} ${filteredJobs.length === 1 ? 'role' : 'roles'}`}</div>
+                  {token && <label className="state-filter-label">Show
+                    <select value={stateFilter} onChange={(event) => setStateFilter(event.target.value)}>
+                      <option value="ALL">All jobs</option>
+                      <option value="INTERESTED">Interested</option>
+                      <option value="NOT_INTERESTED">Not interested</option>
+                      <option value="APPLIED">Applied</option>
+                    </select>
+                  </label>}
+                  <div className="results-count">
+                    {loading ? 'Finding roles...' : totalJobCount > filteredJobs.length
+                      ? `${filteredJobs.length} of ${totalJobCount} roles`
+                      : `${totalJobCount} ${totalJobCount === 1 ? 'role' : 'roles'}`}
+                  </div>
+                </div>
+                <div className="discovery-filters">
+                  <input aria-label="Filter by company" value={companyQuery} onChange={(event) => setCompanyQuery(event.target.value)} placeholder="Company" />
+                  <div className="autocomplete-field location-autocomplete">
+                    <input
+                      role="combobox"
+                      aria-label="Filter by location"
+                      aria-autocomplete="list"
+                      aria-expanded={activeSuggestionField === 'location' && locationSuggestions.length > 0}
+                      aria-controls="location-suggestions"
+                      aria-activedescendant={activeSuggestionField === 'location' && activeSuggestionIndex >= 0
+                        ? `location-suggestion-${activeSuggestionIndex}` : undefined}
+                      value={locationQuery}
+                      onFocus={() => { setActiveSuggestionField('location'); setActiveSuggestionIndex(-1); }}
+                      onBlur={() => { setActiveSuggestionField(null); setActiveSuggestionIndex(-1); }}
+                      onChange={(event) => { setLocationQuery(event.target.value); setLocationSuggestions([]); setActiveSuggestionIndex(-1); }}
+                      onKeyDown={(event) => handleSuggestionKeyDown(event, 'location', locationSuggestions)}
+                      placeholder="Location"
+                    />
+                    {activeSuggestionField === 'location' && locationSuggestions.length > 0 && (
+                      <div className="suggestion-list" id="location-suggestions" role="listbox" aria-label="Location suggestions">
+                        {locationSuggestions.map((suggestion, index) => (
+                          <button
+                            type="button"
+                            role="option"
+                            id={`location-suggestion-${index}`}
+                            aria-selected={index === activeSuggestionIndex}
+                            className="suggestion-option"
+                            key={suggestion.value}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => chooseSuggestion('location', suggestion.value)}
+                          >
+                            <span>{suggestion.value}</span>
+                            <small>{suggestion.matches} jobs</small>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <input aria-label="Filter by skill" value={skillQuery} onChange={(event) => setSkillQuery(event.target.value)} placeholder="Skill" />
+                  {(companyQuery || locationQuery || skillQuery || stateFilter !== 'ALL') &&
+                    <button className="clear-filters-button" onClick={() => { setCompanyQuery(''); setLocationQuery(''); setSkillQuery(''); setStateFilter('ALL'); }}>Clear filters</button>}
                 </div>
 
                 {loadError ? (
@@ -381,7 +691,23 @@ export default function App() {
                             {job.employmentType && <span className="job-tag">{job.employmentType}</span>}
                             {job.remoteStatus && <span className="job-tag tag-green">{job.remoteStatus.replace(/_/g, ' ')}</span>}
                             {job.source && <span className="job-tag tag-muted">via {job.source}</span>}
+                            {job.skills?.slice(0, 3).map((skill) => <span className="job-tag" key={skill}>{skill}</span>)}
                           </div>
+                          <div className="job-card-meta">
+                            {job.matchScore !== undefined && job.matchScore !== null && <span className="match-score">{job.matchScore}% match</span>}
+                            {job.explanation && <button className="explanation-toggle" onClick={() => toggleExplanation(job.id)}>{expandedJobIds.includes(job.id) ? 'Hide match details' : 'Why this match?'}</button>}
+                          </div>
+                          {expandedJobIds.includes(job.id) && (
+                            <div className="match-explanation">
+                              <p>{job.explanation}</p>
+                              {Boolean(job.matchedSkills?.length) && <div><strong>Matching skills</strong><div className="job-tags">{job.matchedSkills?.map((skill) => <span className="job-tag tag-green" key={skill}>{skill}</span>)}</div></div>}
+                              {Boolean(job.missingSkills?.length) && <div><strong>Skills to build</strong><div className="job-tags">{job.missingSkills?.map((skill) => <span className="job-tag tag-muted" key={skill}>{skill}</span>)}</div></div>}
+                              <div className="match-state-actions">
+                                <button onClick={() => void updateJobState(job, 'NOT_INTERESTED')}>Not interested</button>
+                                <button onClick={() => void updateJobState(job, 'APPLIED')}>Mark as applied</button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <div className="job-actions">
                           <button className={`save-button ${savedIds.includes(job.id) ? 'is-saved' : ''}`} aria-label={savedIds.includes(job.id) ? 'Remove saved role' : 'Save role'} onClick={() => toggleSaved(job)}>
@@ -393,8 +719,13 @@ export default function App() {
                     ))}
                   </div>
                 )}
-                {view === 'Overview' && filteredJobs.length > 4 && (
-                  <button className="load-more-button" onClick={() => setView('Discover jobs')}>See all {filteredJobs.length} opportunities <span>→</span></button>
+                {view === 'Overview' && totalJobCount > 4 && (
+                  <button className="load-more-button" onClick={() => setView('Discover jobs')}>Explore all {totalJobCount} opportunities <span>→</span></button>
+                )}
+                {view !== 'Overview' && hasMoreJobs && !loadError && (
+                  <button className="load-more-button" onClick={() => void loadJobs(true)} disabled={loadingMore}>
+                    {loadingMore ? 'Loading more roles…' : `Show more roles (${filteredJobs.length} of ${totalJobCount})`}
+                  </button>
                 )}
               </>
             )}
@@ -422,13 +753,51 @@ export default function App() {
               {selectedJob.remoteStatus && <span className="job-tag tag-green">{selectedJob.remoteStatus.replace(/_/g, ' ')}</span>}
               <span className="job-tag tag-muted">{formatDate(selectedJob.postedDate || selectedJob.ingestedAt)}</span>
             </div>
+            {selectedJob.matchScore !== undefined && selectedJob.matchScore !== null && (
+              <section className="detail-match">
+                <strong>{selectedJob.matchScore}% match</strong>
+                <p>{selectedJob.explanation || 'Your profile has not been matched against this role yet.'}</p>
+                {Boolean(selectedJob.matchedSkills?.length) && <div><b>Matched skills:</b> {selectedJob.matchedSkills?.join(', ')}</div>}
+                {Boolean(selectedJob.missingSkills?.length) && <div><b>Potential gaps:</b> {selectedJob.missingSkills?.join(', ')}</div>}
+              </section>
+            )}
             <div className="detail-description">{selectedJob.description || 'No additional description was provided for this opportunity.'}</div>
             <div className="detail-actions">
-              <button className="primary-button" onClick={() => void trackJob(selectedJob)}>Add to my tracker <span>→</span></button>
+              <button className="primary-button" onClick={() => void updateJobState(selectedJob, 'APPLIED')}>Mark as applied <span>→</span></button>
               <button className={`secondary-button ${savedIds.includes(selectedJob.id) ? 'saved-secondary' : ''}`} onClick={() => toggleSaved(selectedJob)}>{savedIds.includes(selectedJob.id) ? '♥ Saved' : '♡ Save role'}</button>
               {selectedJob.applicationUrl && <a className="external-apply" href={selectedJob.applicationUrl} target="_blank" rel="noreferrer">Visit application page ↗</a>}
             </div>
-            <p className="detail-note">Your application is only submitted when you choose to continue on the employer’s site.</p>
+            <p className="detail-note">Marking this as applied updates your tracker only. It does not submit an application to the employer.</p>
+          </section>
+        </div>
+      )}
+
+      {manualJobOpen && (
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setManualJobOpen(false); }}>
+          <section className="manual-job-modal" role="dialog" aria-modal="true" aria-labelledby="manual-job-title">
+            <button className="modal-close" aria-label="Close add job form" onClick={() => setManualJobOpen(false)}>×</button>
+            <div className="section-kicker">ADD AN OPPORTUNITY</div>
+            <h2 id="manual-job-title">Add a job to discover</h2>
+            <p>Save a role you found elsewhere and keep it with your research.</p>
+            <form className="manual-job-form" onSubmit={(event) => void submitManualJob(event)}>
+              <label>Job title<input required value={manualJob.title} onChange={(event) => setManualJob({ ...manualJob, title: event.target.value })} /></label>
+              <label>Company<input required value={manualJob.company} onChange={(event) => setManualJob({ ...manualJob, company: event.target.value })} /></label>
+              <label>Location<input value={manualJob.location} onChange={(event) => setManualJob({ ...manualJob, location: event.target.value })} /></label>
+              <label>Work arrangement
+                <select value={manualJob.remoteStatus} onChange={(event) => setManualJob({ ...manualJob, remoteStatus: event.target.value })}>
+                  <option value="">Not specified</option><option value="REMOTE">Remote</option><option value="HYBRID">Hybrid</option><option value="ON_SITE">On-site</option>
+                </select>
+              </label>
+              <label>Employment type<input placeholder="Full-time, contract..." value={manualJob.employmentType} onChange={(event) => setManualJob({ ...manualJob, employmentType: event.target.value })} /></label>
+              <label>Application URL<input type="url" value={manualJob.applicationUrl} onChange={(event) => setManualJob({ ...manualJob, applicationUrl: event.target.value })} /></label>
+              <label className="manual-job-wide">Skills, separated by commas<input value={manualJob.skills} onChange={(event) => setManualJob({ ...manualJob, skills: event.target.value })} /></label>
+              <label className="manual-job-wide">Description<textarea rows={4} value={manualJob.description} onChange={(event) => setManualJob({ ...manualJob, description: event.target.value })} /></label>
+              {manualJobError && <div className="form-error manual-job-wide">{manualJobError}</div>}
+              <div className="manual-job-actions manual-job-wide">
+                <button type="button" className="secondary-button" onClick={() => setManualJobOpen(false)}>Cancel</button>
+                <button className="primary-button" disabled={manualJobBusy}>{manualJobBusy ? 'Adding job...' : 'Add job'}</button>
+              </div>
+            </form>
           </section>
         </div>
       )}
@@ -440,7 +809,7 @@ export default function App() {
             <span className="brand-mark auth-mark"><span /></span>
             <div className="section-kicker">{registerMode ? 'START YOUR NEXT CHAPTER' : 'GOOD TO HAVE YOU BACK'}</div>
             <h2 id="auth-title">{registerMode ? 'Create your space' : 'Welcome back'}</h2>
-            <p>{selectedJob ? `Sign in to add ${selectedJob.title} to your tracker.` : 'Sign in to keep your search and applications together.'}</p>
+            <p>{selectedJob && pendingState ? `Sign in to update your status for ${selectedJob.title}.` : selectedJob ? `Sign in to add ${selectedJob.title} to your tracker.` : 'Sign in to keep your search and applications together.'}</p>
             <form className="auth-form" onSubmit={(event) => void submitApplication(event)}>
               <label>Email address<input type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" /></label>
               <label>Password<input type="password" autoComplete={registerMode ? 'new-password' : 'current-password'} required minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 8 characters" /></label>

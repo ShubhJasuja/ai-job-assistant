@@ -54,7 +54,17 @@ public class ApplicationService {
         this.jobRepository = jobRepository;
     }
 
+    @Transactional
     public Application create(Long jobId, Long currentUserId) {
+        return createWithStatus(jobId, currentUserId, ApplicationStatus.DISCOVERED);
+    }
+
+    @Transactional
+    public Application createAsApplied(Long jobId, Long currentUserId) {
+        return createWithStatus(jobId, currentUserId, ApplicationStatus.APPLIED);
+    }
+
+    private Application createWithStatus(Long jobId, Long currentUserId, ApplicationStatus initialStatus) {
         User user = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         Job job = jobRepository.findById(jobId)
@@ -68,12 +78,12 @@ public class ApplicationService {
         Application app = Application.builder()
                 .user(user)
                 .job(job)
-                .status(ApplicationStatus.DISCOVERED)
+                .status(initialStatus)
                 .build();
 
         Application saved = applicationRepository.save(app);
 
-        createEvent(saved, null, ApplicationStatus.DISCOVERED, null);
+        createEvent(saved, null, initialStatus, null);
 
         return saved;
     }

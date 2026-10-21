@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.BatchSize;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -63,10 +64,14 @@ public class Job {
     @Column(name = "posted_date")
     private LocalDate postedDate;
 
+    @Column(name = "source_updated_at")
+    private LocalDateTime sourceUpdatedAt;
+
     @Column(name = "deadline")
     private LocalDate deadline;
 
     @OneToMany(mappedBy = "job", cascade = CascadeType.ALL, orphanRemoval = true)
+    @BatchSize(size = 100)
     @Builder.Default
     private List<JobSkill> jobSkills = new ArrayList<>();
 

@@ -15,3 +15,10 @@ spring:
           new_generator_mappings: false
   flyway:
     enabled: false
+job-sources:
+  greenhouse-boards: []
+  lever-sites: []
+  rss-feeds: []
+  schedule-enabled: false
+  initial-delay-ms: 2147483647
+  refresh-interval-ms: 2147483647

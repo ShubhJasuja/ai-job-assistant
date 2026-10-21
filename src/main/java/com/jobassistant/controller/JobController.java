@@ -2,9 +2,12 @@ package com.jobassistant.controller;
 
 import com.jobassistant.dto.JobCreateRequest;
 import com.jobassistant.dto.JobResponse;
+import com.jobassistant.dto.JobSearchPage;
+import com.jobassistant.dto.JobSearchSuggestion;
 import com.jobassistant.service.JobService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
@@ -46,8 +49,39 @@ public class JobController {
             @RequestParam(required = false) String location,
             @RequestParam(required = false) Boolean remote,
             @RequestParam(required = false) String employmentType,
-            @RequestParam(required = false) Boolean active) {
-        return ResponseEntity.ok(jobService.listJobs(keyword, company, location, remote, employmentType, active));
+            @RequestParam(required = false) Boolean active,
+            @RequestParam(required = false) String skill) {
+        return ResponseEntity.ok(jobService.listJobs(keyword, company, location, remote, employmentType, active, skill));
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<JobSearchPage<JobResponse>> searchJobs(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String company,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) Boolean remote,
+            @RequestParam(required = false) String employmentType,
+            @RequestParam(required = false) Boolean active,
+            @RequestParam(required = false) String skill,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "24") int limit) {
+        validatePageWindow(offset, limit);
+        return ResponseEntity.ok(jobService.searchPage(
+                keyword, company, location, remote, employmentType, active, skill, offset, limit));
+    }
+
+    private void validatePageWindow(int offset, int limit) {
+        if (offset < 0 || limit < 1 || limit > 100) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST, "Offset must be non-negative and limit must be between 1 and 100");
+        }
+    }
+
+    @GetMapping("/suggestions")
+    public ResponseEntity<List<JobSearchSuggestion>> suggestions(
+            @RequestParam String query,
+            @RequestParam(defaultValue = "keyword") String field) {
+        return ResponseEntity.ok(jobService.searchSuggestions(query, field));
     }
 
     @PutMapping("/{id}")

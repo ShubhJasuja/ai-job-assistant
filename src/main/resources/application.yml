@@ -59,6 +59,16 @@ matching:
   weightRemote: 10
   weightRole: 5
 
+# Public Greenhouse boards are a small verified starter set. Override with a
+# comma-separated list of "board-slug=Company Name" values in GREENHOUSE_BOARDS.
+# Lever/RSS connectors remain opt-in; RSS values use "https://feed-url|Company Name".
+job-sources:
+  greenhouse-boards: ${GREENHOUSE_BOARDS:stripe=Stripe,anthropic=Anthropic,datadog=Datadog,cloudflare=Cloudflare,mongodb=MongoDB}
+  lever-sites: ${LEVER_SITES:}
+  rss-feeds: ${RSS_FEEDS:}
+  initial-delay-ms: ${JOB_SOURCE_INITIAL_DELAY_MS:60000}
+  refresh-interval-ms: ${JOB_SOURCE_REFRESH_INTERVAL_MS:21600000}
+
 # AI configuration (disabled by default)
 # Set AI_ENABLED=true and AI_API_KEY via env to activate OpenAI.
 # Provider class selected by @ConditionalOnProperty; NoOp is default.

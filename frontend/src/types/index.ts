@@ -8,9 +8,16 @@ export interface Job {
   description: string;
   source?: string | null;
   postedDate?: string | null;
+  sourceUpdatedAt?: string | null;
   ingestedAt?: string | null;
   isActive?: boolean;
   applicationUrl?: string | null;
+  skills?: string[];
+  matchScore?: number | null;
+  explanation?: string | null;
+  matchedSkills?: string[];
+  missingSkills?: string[];
+  userState?: string;
 }
 
 export interface JobMatch {

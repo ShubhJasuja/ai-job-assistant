@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * Request for manually adding a job via the API.
@@ -34,4 +35,6 @@ public class JobCreateRequest {
     private LocalDate postedDate;
 
     private LocalDate deadline;
+
+    private List<String> skills;
 }

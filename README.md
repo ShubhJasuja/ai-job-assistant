@@ -6,6 +6,12 @@ Multi-user platform for job/internship management with deterministic matching, A
 
 Candidates manually track applications against unstructured descriptions; matching is subjective. This system provides deterministic scoring (skills Jaccard / experience range / location alias / education / remote / role keywords), AI job analysis, resume tailoring against a target job, and structured application-status tracking with audit trails.
 
+## Current Product Status
+
+The product is branded **Pathwise** in the React/TypeScript frontend. Job discovery is connected to verified public Greenhouse boards for Stripe, Anthropic, Datadog, Cloudflare, and MongoDB, with role/technology-aware search, suggestions, saved-job states, match explanations, and an application list. Search has bounded page endpoints for frontend use; the legacy list endpoints remain available.
+
+This is an MVP foundation, not yet a production-complete job platform. Resume tailoring review/versioning and export, application reminders and recruiter history, persisted saved searches/alerts, operational monitoring, and full end-to-end browser coverage remain incomplete. AI is disabled by default. Any future application assistance must retain explicit human review and final approval.
+
 ## Verified Features
 
 - **Auth & Profile Foundation** (Phase 1 / 2 — `484d9ec` / `f86ad21`): JWT auth (`jjwt` 0.12.6), `CandidateProfile`, `Preferences`, `Education`, `Experience`; `SecurityConfig` with public GET; env-driven Docker (no hardcoded secrets).
@@ -17,8 +23,8 @@ Candidates manually track applications against unstructured descriptions; matchi
 
 ## Technology Stack
 
-- Java 21 / Spring Boot 3.3.4
-- Spring Data JPA (Hibernate 6.5) / Flyway / PostgreSQL 17
+- Java 21 / Spring Boot 3.5.16
+- Spring Data JPA / Flyway / PostgreSQL (Docker Compose uses PostgreSQL 15)
 - Spring Data Redis / Spring Security / JWT (`jjwt` 0.12.6) / Lombok
 - Maven 3 / Docker Compose / nginx
 - OpenAPI (springdoc-openapi-starter-webmvc-ui 2.6.0)
@@ -62,12 +68,12 @@ Edit `.env` to set placeholders (defaults already present in `application.yml`):
 
 ```bash
 DB_HOST=localhost
-DB_PORT=5432
+DB_PORT=5433
 DB_NAME=jobassistant_db
 DB_USER=jobadmin
 DB_PASSWORD=<set-your-password>
 REDIS_HOST=localhost
-REDIS_PORT=6379
+REDIS_PORT=6380
 JWT_SECRET=change-me-at-least-32-characters-long
 # AI optional and disabled by default:
 AI_ENABLED=false
@@ -83,7 +89,7 @@ mvn clean test
 Docker Compose (env-driven, no hardcoded credentials):
 
 ```powershell
-docker-compose up -d
+docker compose up -d
 ```
 
 Run application:
@@ -95,14 +101,34 @@ mvn clean package
 java -jar target/ai-job-assistant-0.0.1-SNAPSHOT.jar
 ```
 
+Run the frontend in a second terminal:
+
+```powershell
+Set-Location frontend
+npm ci
+npm run dev
+```
+
+The frontend defaults to `http://localhost:8080` for the API; set `VITE_API_BASE_URL` to override it.
+
+Job discovery ingests a verified starter set of public Greenhouse boards by default:
+Stripe, Anthropic, Datadog, Cloudflare, and MongoDB. Refresh runs at startup and every
+six hours. Override `GREENHOUSE_BOARDS` with comma-separated `board=Company` values.
+Lever and RSS sources are opt-in via `LEVER_SITES` and `RSS_FEEDS`. Authenticated
+users can trigger a refresh with `POST /api/v1/job-sources/refresh`.
+
 ## API Endpoints
 
 Public (no auth):
-- `GET /api/v1/jobs` — list jobs; `GET /api/v1/jobs/{id}` — single job; `GET /api/v1/jobs/duplicate-check`
+- `GET /api/v1/jobs` — legacy job list; `GET /api/v1/jobs/search?offset=0&limit=24` — bounded search results with total and next-page metadata
+- `GET /api/v1/jobs/suggestions?query=java&field=keyword` — keyword or location suggestions
+- `GET /api/v1/jobs/{id}` — single job; `GET /api/v1/jobs/duplicate-check`
 
 Auth required (JWT via `Authorization: Bearer <token>`):
 - `POST /api/v1/auth/register`
 - `POST /api/v1/auth/login`
+- `POST /api/v1/job-sources/refresh` — refresh configured public job sources and return ingestion counts
+- `GET /api/v1/discovery/page?offset=0&limit=24` — personalized, bounded job discovery results
 - `POST /api/v1/applications` — create (user derived from SecurityContext; never from request body)
 - `PUT /api/v1/applications/{appId}/status` — update with transition rules (Phase 4.4)
 - `GET /api/v1/applications/{appId}/events` — audit trail
@@ -145,7 +171,7 @@ Live OpenAI integration with real API key has not yet been verified in this envi
 
 ## Tests
 
-Verified: `mvn clean test` → **31 tests pass**, 0 failures, `BUILD SUCCESS` (last run 2026-10-17).
+Verified: `mvn clean test` → **77 tests pass**, 0 failures, `BUILD SUCCESS` (2026-10-21). From `frontend/`, `npm run build` type-checks and produces the production bundle.
 
 Mocked tests for Phase 4.2 (`AIAnalysisTest`) and Phase 4.3 (`ResumeTailoringTest`) and Phase 4.4 (`ApplicationStatusTransitionTest`) use `@MockBean`; no external API calls.
 
@@ -154,7 +180,7 @@ Mocked tests for Phase 4.2 (`AIAnalysisTest`) and Phase 4.3 (`ResumeTailoringTes
 - User isolation via `SecurityContext`; no client `userId` params accepted.
 - `sanitize()` filters embedded instruction strings; structured JSON with parse fallback; not guaranteed injection-proof (defense-in-depth only).
 - No hardcoded secrets in repository (`docker-compose.yml` uses env vars; `.env.example` template provided).
-- Public `GET /api/v1/jobs` only; all mutating endpoints require auth.
+- Public job reads/search/suggestions are intentional; personal discovery and mutations require auth.
 - `ApplicationService` enforces ownership (`app.getUser().getId()` matching `currentUserId`); missing / wrong-owner / inactive resources return `RuntimeException` (existing error convention).
 
 ## Known Limitations
@@ -163,7 +189,7 @@ Mocked tests for Phase 4.2 (`AIAnalysisTest`) and Phase 4.3 (`ResumeTailoringTes
 - Job entity has no `user/owner` field (only `isActive`); user isolation not possible for jobs.
 - `ApplicationStatusTransitionTest` uses generic assertions (full transition matrix already enforced by service layer; mock tests cover valid/invalid/rejection paths).
 - Resume uses `content` string for tailoring (no invented fields); no external scraping / cover-letter generation implemented.
-- Frontend `frontend/package.json` exists but minimal integration; not part of completed phases.
+- Frontend covers job discovery and basic application tracking; resume-tailoring review and the full application workflow are not yet integrated end-to-end.
 - `MiniRedis-Sandbox` is preserved untouched.
 
 ## Completed Phases
@@ -181,7 +207,10 @@ Mocked tests for Phase 4.2 (`AIAnalysisTest`) and Phase 4.3 (`ResumeTailoringTes
 ## Future Roadmap (not completed)
 
 - Live OpenAI integration verification (optional, separate task)
-- Interview preparation features
-- Frontend integration (React / static build)
+- Complete resume-tailoring review/version comparison/acceptance/export UX
+- Application notes, follow-up reminders, recruiter history and notification delivery
+- Persisted saved searches and job/match alerts
+- Production-grade source monitoring, query optimization, observability and deployment/restore runbooks
+- Full accessible frontend coverage and browser-based end-to-end journeys
 - Phase 4.4 mocked test expansion (explicit missing-app / withdrawal paths if desired)
 - Coverage for all transition matrix paths via mocked tests (current service layer already enforces rules)

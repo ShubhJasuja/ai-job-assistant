@@ -3,6 +3,8 @@ package com.jobassistant.dto;
 import com.jobassistant.entity.Job;
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * Read-only projection for job responses.
  */
@@ -19,10 +21,12 @@ public class JobResponse {
     private String source;
     private String sourceJobId;
     private java.time.LocalDate postedDate;
+    private java.time.LocalDateTime sourceUpdatedAt;
     private java.time.LocalDate deadline;
     private java.time.LocalDateTime ingestedAt;
     private Boolean isActive;
     private java.time.LocalDateTime updatedAt;
+    private List<String> skills;
 
     public static JobResponse from(Job job) {
         JobResponse dto = new JobResponse();
@@ -37,10 +41,15 @@ public class JobResponse {
         dto.setSource(job.getSource());
         dto.setSourceJobId(job.getSourceJobId());
         dto.setPostedDate(job.getPostedDate());
+        dto.setSourceUpdatedAt(job.getSourceUpdatedAt());
         dto.setDeadline(job.getDeadline());
         dto.setIngestedAt(job.getIngestedAt());
         dto.setIsActive(job.getIsActive());
         dto.setUpdatedAt(job.getUpdatedAt());
+        dto.setSkills(job.getJobSkills().stream()
+                .map(skill -> skill.getSkill_name())
+                .distinct()
+                .toList());
         return dto;
     }
 }

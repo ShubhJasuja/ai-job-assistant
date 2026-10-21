@@ -2,6 +2,8 @@ package com.jobassistant.service;
 
 import com.jobassistant.dto.JobCreateRequest;
 import com.jobassistant.dto.JobResponse;
+import com.jobassistant.dto.JobSearchPage;
+import com.jobassistant.dto.JobSearchSuggestion;
 import com.jobassistant.entity.Job;
 import com.jobassistant.ingestion.ManualJobIngestion;
 import com.jobassistant.enums.RemoteStatus;
@@ -34,7 +36,7 @@ public class JobServiceTests {
     @BeforeEach
     void setUp() {
         jobRepository.deleteAll();
-        service = new JobService(jobRepository, new ManualJobIngestion());
+        service = new JobService(jobRepository, new ManualJobIngestion(), new JobSkillNormalizer());
     }
 
     @Test
@@ -125,5 +127,103 @@ public class JobServiceTests {
         update.setTitle("Senior Dev");
         JobResponse updated = service.updateJob(created.getId(), update);
         assertEquals("Senior Dev", updated.getTitle());
+    }
+
+    @Test
+    void keywordSearchMatchesTechnologySkillsAndEquivalentSoftwareRoles() {
+        JobCreateRequest request = new JobCreateRequest();
+        request.setTitle("Software Engineer");
+        request.setCompany("Acme");
+        request.setLocation("San Francisco");
+        request.setSkills(List.of("Java"));
+        service.createJob(request);
+
+        List<JobResponse> technologyMatches =
+                service.listJobs("java", null, null, null, null, true);
+        List<JobResponse> roleMatches =
+                service.listJobs("software developer", null, null, null, null, true);
+
+        assertEquals(1, technologyMatches.size());
+        assertEquals(1, roleMatches.size());
+        assertEquals("Software Engineer", roleMatches.get(0).getTitle());
+    }
+
+    @Test
+    void singleCharacterSearchUsesWordPrefixesInsteadOfMatchingEveryDescription() {
+        JobCreateRequest javaJob = new JobCreateRequest();
+        javaJob.setTitle("Platform Engineer");
+        javaJob.setCompany("Acme");
+        javaJob.setDescription("Build services for our growing platform.");
+        javaJob.setSkills(List.of("Java"));
+        service.createJob(javaJob);
+
+        JobCreateRequest unrelatedJob = new JobCreateRequest();
+        unrelatedJob.setTitle("Backend Engineer");
+        unrelatedJob.setCompany("Beta");
+        unrelatedJob.setDescription("Join an experienced team and build reliable services.");
+        service.createJob(unrelatedJob);
+
+        List<JobResponse> matches = service.listJobs("j", null, null, null, null, true);
+
+        assertEquals(1, matches.size());
+        assertEquals("Platform Engineer", matches.get(0).getTitle());
+    }
+
+    @Test
+    void suggestionsIncludeTechnologyRoleAliasesAndPrefixMatchedLocations() {
+        JobCreateRequest request = new JobCreateRequest();
+        request.setTitle("Software Engineer");
+        request.setCompany("Acme");
+        request.setLocation("San Francisco");
+        request.setSkills(List.of("Java"));
+        service.createJob(request);
+
+        List<JobSearchSuggestion> keywordSuggestions =
+                service.searchSuggestions("j", "keyword");
+        List<JobSearchSuggestion> roleSuggestions =
+                service.searchSuggestions("sof", "keyword");
+        List<JobSearchSuggestion> locationSuggestions =
+                service.searchSuggestions("s", "location");
+        List<JobSearchSuggestion> inLocationWordSuggestions =
+                service.searchSuggestions("fra", "location");
+
+        assertTrue(keywordSuggestions.stream().anyMatch(suggestion ->
+                suggestion.value().equals("Java") && suggestion.category().equals("TECHNOLOGY")));
+        assertTrue(roleSuggestions.stream().anyMatch(suggestion ->
+                suggestion.value().equals("Software Developer") && suggestion.category().equals("ROLE")));
+        assertTrue(locationSuggestions.stream().anyMatch(suggestion ->
+                suggestion.value().equals("San Francisco")));
+        assertTrue(inLocationWordSuggestions.stream().anyMatch(suggestion ->
+                suggestion.value().equals("San Francisco")));
+    }
+
+    @Test
+    void searchPageReturnsBoundedResultsAndPagingMetadata() {
+        for (String title : List.of("Backend Engineer", "Frontend Engineer", "Platform Engineer")) {
+            JobCreateRequest request = new JobCreateRequest();
+            request.setTitle(title);
+            request.setCompany("Acme");
+            service.createJob(request);
+        }
+
+        JobSearchPage<JobResponse> firstPage =
+                service.searchPage(null, null, null, null, null, true, null, 0, 2);
+        JobSearchPage<JobResponse> lastPage =
+                service.searchPage(null, null, null, null, null, true, null, 2, 2);
+
+        assertEquals(3, firstPage.totalElements());
+        assertEquals(2, firstPage.items().size());
+        assertTrue(firstPage.hasNext());
+        assertEquals(3, lastPage.totalElements());
+        assertEquals(1, lastPage.items().size());
+        assertFalse(lastPage.hasNext());
+    }
+
+    @Test
+    void searchPageRejectsInvalidPageBounds() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.searchPage(null, null, null, null, null, true, null, -1, 10));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.searchPage(null, null, null, null, null, true, null, 0, 101));
     }
 }

@@ -53,36 +53,40 @@ public class MatchingEngine {
         List<String> missingSkills = new ArrayList<>();
 
         // --- 1. Skills (40%) ---
-        List<String> candidateSkillNames = profile.getSkills().stream()
+        Set<String> candidateSet = safeList(profile.getSkills()).stream()
                 .map(Skill::getName)
-                .map(String::toLowerCase)
-                .collect(Collectors.toList());
-
-        List<String> jobSkillNames = job.getJobSkills().stream()
+                .filter(Objects::nonNull)
+                .map(MatchingEngine::canonicalSkill)
+                .collect(Collectors.toSet());
+        List<String> jobSkillNames = safeList(job.getJobSkills()).stream()
                 .map(JobSkill::getSkill_name)
-                .map(String::toLowerCase)
-                .collect(Collectors.toList());
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        Set<String> matched = new LinkedHashSet<>();
+        for (String jobSkill : jobSkillNames) {
+            if (candidateSet.contains(canonicalSkill(jobSkill))) {
+                matched.add(jobSkill);
+            } else {
+                missingSkills.add(jobSkill);
+            }
+        }
 
-        Set<String> candidateSet = new HashSet<>(candidateSkillNames);
-        Set<String> jobSet = new HashSet<>(jobSkillNames);
-
-        Set<String> matched = new HashSet<>(candidateSet);
-        matched.retainAll(jobSet);
-        Set<String> unmatched = new HashSet<>(jobSet);
-        unmatched.removeAll(candidateSet);
-
-        // Handle skill aliases (e.g., "sql" ↔ "postgresql")
-        applySkillAliases(jobSet, candidateSet, matched, missingSkills);
-
-        double skillRatio = (double) Math.max(matched.size(), 0) /
-                Math.max(jobSet.size(), 1);
+        double skillRatio = jobSkillNames.isEmpty()
+                ? 1.0
+                : (double) matched.size() / jobSkillNames.size();
         int skillScore = (int) Math.round(skillRatio * props.getWeightSkills());
         score += skillScore;
 
         matchedSkills.addAll(matched);
-        missingSkills.addAll(unmatched);
         explanation.append(String.format("Skills: %d of %d matched (%d/%d pts). ",
-                matched.size(), jobSet.size(), skillScore, props.getWeightSkills()));
+                matched.size(), jobSkillNames.size(), skillScore, props.getWeightSkills()));
+        if (!matchedSkills.isEmpty()) {
+            explanation.append("Matches: ").append(String.join(", ", matchedSkills)).append(". ");
+        }
+        if (!missingSkills.isEmpty()) {
+            explanation.append("Skills to build: ").append(String.join(", ", missingSkills)).append(". ");
+        }
 
         // --- 2. Experience (20%) ---
         int candidateYears = estimateCandidateYears(profile);
@@ -101,7 +105,7 @@ public class MatchingEngine {
 
         // --- 3. Location (15%) ---
         int locScore = computeLocationScore(
-                profile.getPreferences() != null ? profile.getPreferences().getLocation() : null,
+                preferredLocation(profile),
                 job.getLocation()
         );
         score += locScore;
@@ -114,7 +118,7 @@ public class MatchingEngine {
 
         // --- 5. Remote preference (10%) ---
         int remoteScore = computeRemoteScore(
-                profile.getPreferences() != null ? profile.getPreferences().getRemoteOk() : null,
+                preferredRemote(profile),
                 job.getRemoteStatus()
         );
         score += remoteScore;
@@ -122,7 +126,7 @@ public class MatchingEngine {
 
         // --- 6. Role title match (5%) ---
         int roleScore = computeRoleScore(
-                profile.getPreferences() != null ? profile.getPreferences().getRole() : null,
+                preferredRole(profile),
                 job.getTitle()
         );
         score += roleScore;
@@ -144,48 +148,58 @@ public class MatchingEngine {
 
     // ---- Private helpers ----
 
-    private void applySkillAliases(Set<String> jobSet, Set<String> candidateSet, Set<String> matched, List<String> missing) {
-        // Map known equivalences: "postgresql" ↔ "sql", "react" ↔ "react.js"
-        Map<String, String> aliases = Map.of(
-                "postgresql", "sql", "postgres", "sql",
-                "react.js", "react", "nodejs", "node.js",
-                "spring boot", "spring", "hibernate", "spring"
-        );
+    private static String canonicalSkill(String skill) {
+        String normalized = skill.trim().toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "postgres", "postgresql" -> "sql";
+            case "react.js" -> "react";
+            case "nodejs" -> "node.js";
+            case "spring boot", "hibernate" -> "spring";
+            default -> normalized;
+        };
+    }
 
-        // Add alias matches
-        for (String skill : new ArrayList<>(matched)) {
-            String alias = aliases.get(skill);
-            if (alias != null) {
-                matched.add(alias);
-            }
-        }
-
-        // Mark truly missing skills
-        for (String jobSkill : jobSet) {
-            if (!matched.contains(jobSkill)) {
-                String alias = aliases.get(jobSkill);
-                if (alias != null && matched.contains(alias)) {
-                    matched.add(jobSkill); // treat as matched via alias
-                } else {
-                    missing.add(jobSkill);
-                }
-            }
-        }
+    private <T> List<T> safeList(List<T> values) {
+        return values == null ? List.of() : values;
     }
 
     private int estimateCandidateYears(CandidateProfile profile) {
         int maxExp = 0;
-        for (Experience exp : profile.getExperiences()) {
+        for (Experience exp : safeList(profile.getExperiences())) {
+            if (exp.getStartDate() == null) continue;
             var end = exp.getEndDate() != null ? exp.getEndDate() : java.time.LocalDate.now();
             int years = Period.between(exp.getStartDate(), end).getYears();
             maxExp = Math.max(maxExp, years);
         }
-        // If no experience, check if fresher flag is set
-        if (maxExp == 0 && !profile.getEducations().isEmpty()) {
-            // Estimate 0 years (fresher)
-            return 0;
+        if (maxExp == 0 && profile.getExperienceLevel() != null) {
+            int[] representatives = {0, 2, 4, 7, 12};
+            int level = profile.getExperienceLevel();
+            if (level >= 0 && level < representatives.length) return representatives[level];
         }
         return maxExp;
+    }
+
+    private String preferredLocation(CandidateProfile profile) {
+        if (profile.getPreferences() != null && profile.getPreferences().getLocation() != null) {
+            return profile.getPreferences().getLocation();
+        }
+        String locations = profile.getPreferredLocations();
+        return locations == null ? null : locations.split(",")[0].trim();
+    }
+
+    private Boolean preferredRemote(CandidateProfile profile) {
+        if (profile.getPreferences() != null && profile.getPreferences().getRemoteOk() != null) {
+            return profile.getPreferences().getRemoteOk();
+        }
+        return profile.getRemotePreference();
+    }
+
+    private String preferredRole(CandidateProfile profile) {
+        if (profile.getPreferences() != null && profile.getPreferences().getRole() != null) {
+            return profile.getPreferences().getRole();
+        }
+        String roles = profile.getPreferredRoles();
+        return roles == null ? null : roles.split(",")[0].trim();
     }
 
     private int[] parseExperienceRange(String employmentType, String title) {
@@ -212,8 +226,8 @@ public class MatchingEngine {
         }
         if (jobLocation == null) return 0;
 
-        String pref = preferredLocation.toLowerCase();
-        String jobLoc = jobLocation.toLowerCase();
+        String pref = preferredLocation.toLowerCase(Locale.ROOT).trim();
+        String jobLoc = jobLocation.toLowerCase(Locale.ROOT).trim();
 
         if (pref.contains(jobLoc) || jobLoc.contains(pref)) {
             return props.getWeightLocation();
@@ -221,10 +235,10 @@ public class MatchingEngine {
 
         // Check aliases
         for (Map.Entry<String, Set<String>> entry : CITY_ALIASES.entrySet()) {
-            if (entry.getValue().contains(pref)) {
-                if (entry.getValue().contains(jobLoc)) {
-                    return props.getWeightLocation();
-                }
+            boolean preferredMatches = entry.getValue().stream().anyMatch(pref::contains);
+            boolean jobMatches = entry.getValue().stream().anyMatch(jobLoc::contains);
+            if (preferredMatches && jobMatches) {
+                return props.getWeightLocation();
             }
         }
         return 0;
@@ -242,6 +256,7 @@ public class MatchingEngine {
 
     private int computeRemoteScore(Boolean remoteOk, RemoteStatus jobRemote) {
         if (remoteOk == null) return props.getWeightRemote(); // no preference
+        if (jobRemote == null) return props.getWeightRemote(); // source did not disclose remote status
         boolean jobIsRemote = jobRemote == RemoteStatus.REMOTE || jobRemote == RemoteStatus.HYBRID;
         if (remoteOk && jobIsRemote) return props.getWeightRemote();
         if (!remoteOk && jobRemote == RemoteStatus.ON_SITE) return props.getWeightRemote();
@@ -250,8 +265,8 @@ public class MatchingEngine {
 
     private int computeRoleScore(String preferredRole, String jobTitle) {
         if (preferredRole == null || preferredRole.trim().isEmpty()) return 0;
-        String role = preferredRole.toLowerCase();
-        String title = jobTitle.toLowerCase();
+        String role = preferredRole.toLowerCase(Locale.ROOT);
+        String title = jobTitle == null ? "" : jobTitle.toLowerCase(Locale.ROOT);
         // Check if any keyword from the role appears in the title
         String[] keywords = role.split("[, \\+]+");
         for (String kw : keywords) {
